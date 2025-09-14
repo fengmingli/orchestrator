@@ -1,0 +1,31 @@
+template:
+  name: 串并混合案例
+  steps:
+    - id: A
+      type: func
+      mode: serial        # 根节点，串行
+      param: {msg: "A 开始"}
+
+    - id: B
+      type: func
+      mode: parallel      # B、C、D 并行
+      dependencies: [A]
+      param: {msg: "B 并行任务"}
+
+    - id: C
+      type: func
+      mode: parallel
+      dependencies: [A]
+      param: {msg: "C 并行任务"}
+
+    - id: D
+      type: func
+      mode: parallel
+      dependencies: [A]
+      param: {msg: "D 并行任务"}
+
+    - id: E
+      type: func
+      mode: serial        # 汇总，串行
+      dependencies: [B,C,D]
+      param: {msg: "E 汇总（串行）"}
