@@ -119,7 +119,7 @@ func (d *DAG) topoLayers() ([][]ID, error) {
 	}
 
 	var layers [][]ID
-	q := []ID{}
+	var q []ID
 	for id, deg := range inDegree {
 		if deg == 0 {
 			q = append(q, id)
