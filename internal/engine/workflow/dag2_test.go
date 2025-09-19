@@ -1,4 +1,4 @@
-package dag
+package workflow
 
 import (
 	"context"
@@ -33,10 +33,10 @@ func TestSerialParallelMixed(t *testing.T) {
 	// 3. 构造 DAG 描述
 	desc := []Desc{
 		{ID: "A", Mode: RunModeSerial, Runner: makeRecorder("A")},
-		{ID: "B", Mode: RunModeParallel, Dependencies: []string{"A"}, Runner: makeRecorder("B")},
-		{ID: "C", Mode: RunModeParallel, Dependencies: []string{"A"}, Runner: makeRecorder("C")},
-		{ID: "D", Mode: RunModeParallel, Dependencies: []string{"A"}, Runner: makeRecorder("D")},
-		{ID: "E", Mode: RunModeSerial, Dependencies: []string{"B", "C", "D"}, Runner: makeRecorder("E")},
+		{ID: "B", Mode: RunModeParallel, Deps: []ID{"A"}, Runner: makeRecorder("B")},
+		{ID: "C", Mode: RunModeParallel, Deps: []ID{"A"}, Runner: makeRecorder("C")},
+		{ID: "D", Mode: RunModeParallel, Deps: []ID{"A"}, Runner: makeRecorder("D")},
+		{ID: "E", Mode: RunModeSerial, Deps: []ID{"B", "C", "D"}, Runner: makeRecorder("E")},
 	}
 
 	// 4. 建图 & 调度

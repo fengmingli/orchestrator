@@ -1,0 +1,9 @@
+[ DAG 定义 ]
+   ↓
+[ DAG Scheduler ]
+   ↓ (遍历拓扑序，提交任务到并发池)
+[ Retryable ExecutorX ] ←→ [Data Hook: DB/Log/Metrics]
+   ↓ (每个节点任务)
+[ SyncTask / AsyncTask ] → (等待结果 → 触发下游)
+   ↓
+[ DAG 完成 / 失败回调 ]

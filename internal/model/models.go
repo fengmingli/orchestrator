@@ -20,16 +20,18 @@ type Template struct {
 
 // TemplateStep 模板步骤
 type TemplateStep struct {
-	ID           string         `gorm:"primaryKey;size:64"`
-	TemplateID   string         `gorm:"size:64;index"`
-	StepKey      string         `gorm:"size:64"`
-	Name         string         `gorm:"size:128"`
-	Type         string         `gorm:"size:32"` // http / shell / func
-	Parameters   datatypes.JSON // 具体参数
-	Mode         string         `gorm:"size:16;default:serial"` // serial / parallel
-	Dependencies datatypes.JSON // []string
-	TimeoutSec   int            `gorm:"default:30"`
-	RetryTimes   int            `gorm:"default:0"`
+	ID           string `gorm:"primaryKey;size:64"`
+	TemplateID   string `gorm:"size:64;index"`
+	StepKey      string `gorm:"size:64"`
+	Name         string `gorm:"size:128"`
+	Type         string `gorm:"size:32"` // http / shell / func
+	Parameters   string // 具体参数
+	Mode         string `gorm:"size:16;default:serial"` // serial / parallel
+	Dependencies string // []string
+	TimeoutSec   int    `gorm:"default:30"`
+	RetryTimes   int    `gorm:"default:0"`
+	// OnFailure 失败策略：abort(默认) / skip / skip_but_report
+	OnFailure string `gorm:"size:32;default:abort"`
 }
 
 // Execution 一次执行实例

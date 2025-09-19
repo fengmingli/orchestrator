@@ -1,4 +1,4 @@
-package dag
+package workflow
 
 import (
 	"context"
@@ -16,9 +16,9 @@ import (
 
 func TestCycle(t *testing.T) {
 	_, err := NewDAG([]Desc{
-		{ID: "a", Dependencies: []string{"c"}},
-		{ID: "b", Dependencies: []string{"a"}},
-		{ID: "c", Dependencies: []string{"b"}},
+		{ID: "a", Deps: []ID{"c"}},
+		{ID: "b", Deps: []ID{"a"}},
+		{ID: "c", Deps: []ID{"b"}},
 	})
 	if err == nil {
 		t.Fatal("expect cycle")
@@ -28,9 +28,9 @@ func TestCycle(t *testing.T) {
 func TestScheduler(t *testing.T) {
 	d, _ := NewDAG([]Desc{
 		{ID: "a", Mode: RunModeParallel},
-		{ID: "b", Mode: RunModeParallel, Dependencies: []string{"a"}},
-		{ID: "c", Mode: RunModeParallel, Dependencies: []string{"a"}},
-		{ID: "d", Mode: RunModeSerial, Dependencies: []string{"b", "c"}},
+		{ID: "b", Mode: RunModeParallel, Deps: []ID{"a"}},
+		{ID: "c", Mode: RunModeParallel, Deps: []ID{"a"}},
+		{ID: "d", Mode: RunModeSerial, Deps: []ID{"b", "c"}},
 	})
 	var order []string
 	var mu sync.Mutex

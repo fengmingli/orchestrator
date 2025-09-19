@@ -27,7 +27,8 @@ type HTTPRunner struct{}
 
 func (h *HTTPRunner) Run(ctx context.Context, step model.TemplateStep, executionID string) (string, error) {
 	var cfg HTTPConfig
-	if err := json.Unmarshal(step.Parameters, &cfg); err != nil {
+	// TemplateStep.Parameters 是 string，需转为 []byte 再反序列化
+	if err := json.Unmarshal([]byte(step.Parameters), &cfg); err != nil {
 		return "", err
 	}
 	req, err := http.NewRequestWithContext(ctx, cfg.Method, cfg.URL, bytes.NewReader([]byte(cfg.Body)))

@@ -1,4 +1,4 @@
-package dag
+package workflow
 
 import (
 	"context"
@@ -44,10 +44,10 @@ func TestABCMock(t *testing.T) {
 
 	desc := []Desc{
 		{ID: "A", Mode: RunModeSerial, Runner: mock("A", tA)},
-		{ID: "B", Mode: RunModeParallel, Dependencies: []string{"A"}, Runner: mock("B", tB)},
-		{ID: "C", Mode: RunModeParallel, Dependencies: []string{"A"}, Runner: mock("C", tC)},
-		{ID: "D", Mode: RunModeParallel, Dependencies: []string{"A"}, Runner: mock("D", tD)},
-		{ID: "E", Mode: RunModeSerial, Dependencies: []string{"B", "C", "D"}, Runner: mock("E", tE)},
+		{ID: "B", Mode: RunModeParallel, Deps: []ID{"A"}, Runner: mock("B", tB)},
+		{ID: "C", Mode: RunModeParallel, Deps: []ID{"A"}, Runner: mock("C", tC)},
+		{ID: "D", Mode: RunModeParallel, Deps: []ID{"A"}, Runner: mock("D", tD)},
+		{ID: "E", Mode: RunModeSerial, Deps: []ID{"B", "C", "D"}, Runner: mock("E", tE)},
 	}
 
 	d, err := NewDAG(desc)

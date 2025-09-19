@@ -9,9 +9,9 @@ import (
 
 	"github.com/fengmingli/orchestrator/internal/dal"
 	"github.com/fengmingli/orchestrator/internal/engine"
+	_ "github.com/fengmingli/orchestrator/internal/engine/builtin" // register step runners
 	"github.com/fengmingli/orchestrator/internal/model"
 	"github.com/spf13/cobra"
-	"go.uber.org/zap"
 )
 
 var root = &cobra.Command{
@@ -22,7 +22,6 @@ var root = &cobra.Command{
 		if tplID == "" {
 			log.Fatal("--template required")
 		}
-		lg, _ := zap.NewDevelopment()
 		dal.Init()
 		// 创建 execution
 		execID := fmt.Sprintf("exec_%d", time.Now().Unix())
@@ -32,11 +31,11 @@ var root = &cobra.Command{
 		}).Error; err != nil {
 			log.Fatalf("create execution: %v", err)
 		}
-		ex := engine.NewExecutor(lg)
+		ex := engine.NewExecutor()
 		if err := ex.Run(context.Background(), execID); err != nil {
 			log.Fatalf("execution failed: %v", err)
 		}
-		lg.Info("execution finished", zap.String("executionID", execID))
+		log.Printf("execution finished. executionID=%s", execID)
 	},
 }
 

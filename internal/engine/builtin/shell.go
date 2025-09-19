@@ -20,7 +20,8 @@ func (s *ShellRunner) Run(ctx context.Context, step model.TemplateStep, executio
 	var cfg struct {
 		Script string `json:"script"`
 	}
-	json.Unmarshal(step.Parameters, &cfg)
+	// TemplateStep.Parameters 是 string，需转为 []byte 再反序列化
+	_ = json.Unmarshal([]byte(step.Parameters), &cfg)
 	cmd := exec.CommandContext(ctx, "sh", "-c", cfg.Script)
 	var out bytes.Buffer
 	cmd.Stdout = &out
