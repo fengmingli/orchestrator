@@ -52,6 +52,14 @@ logs/
 .idea/
 *.swp
 *.swo
+*.iml
+*.ipr
+*.iws
+.project
+.classpath
+.settings/
+*.sublime-*
+*.code-workspace
 
 # 操作系统
 .DS_Store
