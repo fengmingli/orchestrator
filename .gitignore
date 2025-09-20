@@ -25,3 +25,56 @@ go.work.sum
 # env file
 .env
 
+# 编译文件
+bin/
+dist/
+build/
+
+# 依赖包
+node_modules/
+vendor/
+
+# 日志文件
+*.log
+logs/
+
+# 数据库文件
+*.db
+*.sqlite
+*.sqlite3
+
+# 环境配置
+.env.local
+.env.production
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# 临时文件
+tmp/
+temp/
+*.tmp
+
+# 备份文件
+*.bak
+*.backup
+
+# 覆盖率报告
+coverage/
+*.lcov
+
+# Go
+go.sum
+go.mod.tmp
+
+# Vue.js
+.nuxt/
+.vite/
+
