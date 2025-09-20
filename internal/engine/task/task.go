@@ -79,6 +79,10 @@ func (t *BaseTask) GetTimeout() time.Duration {
 	return t.Timeout
 }
 
+func (t *BaseTask) SetTimeout(timeout time.Duration) {
+	t.Timeout = timeout
+}
+
 func (t *BaseTask) Validate() error {
 	if t.ID == "" {
 		return fmt.Errorf("task ID cannot be empty")

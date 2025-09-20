@@ -62,20 +62,30 @@ func (h *HTTPTask) WithSkipTLSVerify(skip bool) *HTTPTask {
 	return h
 }
 
+// SetHeaders 设置请求头
+func (h *HTTPTask) SetHeaders(headers map[string]string) {
+	h.Headers = headers
+}
+
+// SetBody 设置请求体
+func (h *HTTPTask) SetBody(body string) {
+	h.Body = body
+}
+
 // Validate 验证HTTP任务参数
 func (h *HTTPTask) Validate() error {
 	if err := h.BaseTask.Validate(); err != nil {
 		return err
+	}
 
-	
 	if h.URL == "" {
 		return fmt.Errorf("URL cannot be empty")
+	}
 
-	
 	if h.Method == "" {
 		h.Method = "GET" // 默认GET方法
+	}
 
-	
 	h.Method = strings.ToUpper(h.Method)
 	validMethods := []string{"GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"}
 	isValid := false
@@ -87,8 +97,8 @@ func (h *HTTPTask) Validate() error {
 	}
 	if !isValid {
 		return fmt.Errorf("invalid HTTP method: %s", h.Method)
+	}
 
-	
 	return nil
 }
 
@@ -99,44 +109,42 @@ func (h *HTTPTask) Execute(ctx context.Context) (ExecResult, error) {
 		TaskID:    h.ID,
 		StartTime: start,
 		Metadata:  make(map[string]interface{}),
+	}
 
-	
 	// 创建HTTP客户端
 	client := &http.Client{
 		Timeout: h.GetTimeout(),
-
-	
+	}
 	// 配置TLS
 	if h.SkipTLSVerify {
 		client.Transport = &http.Transport{
 			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 		}
+	}
 
-	
 	// 创建请求
 	var body io.Reader
 	if h.Body != "" {
 		body = bytes.NewBufferString(h.Body)
+	}
 
-	
 	req, err := http.NewRequestWithContext(ctx, h.Method, h.URL, body)
 	if err != nil {
 		result.Error = err.Error()
 		result.FinishTime = time.Now()
 		result.Duration = result.FinishTime.Sub(start)
 		return result, err
+	}
 
-	
 	// 设置请求头
 	for key, value := range h.Headers {
 		req.Header.Set(key, value)
+	}
 
-	
 	// 如果有body且没有设置Content-Type，默认设置为application/json
 	if h.Body != "" && req.Header.Get("Content-Type") == "" {
 		req.Header.Set("Content-Type", "application/json")
-
-	
+	}
 	// 执行请求
 	resp, err := client.Do(req)
 	if err != nil {
@@ -146,7 +154,6 @@ func (h *HTTPTask) Execute(ctx context.Context) (ExecResult, error) {
 		return result, err
 	}
 
-	
 	// 读取响应
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
@@ -154,29 +161,28 @@ func (h *HTTPTask) Execute(ctx context.Context) (ExecResult, error) {
 		result.FinishTime = time.Now()
 		result.Duration = result.FinishTime.Sub(start)
 		return result, err
+	}
 
-	
 	// 填充结果
 	result.FinishTime = time.Now()
 	result.Duration = result.FinishTime.Sub(start)
 	result.Metadata["status_code"] = resp.StatusCode
 	result.Metadata["headers"] = resp.Header
 
-	
 	// 构造输出
 	response := map[string]interface{}{
 		"status_code": resp.StatusCode,
 		"headers":     resp.Header,
 		"body":        string(respBody),
 	}
+	result.Output = response
 
-	
 	// 检查状态码
 	if resp.StatusCode >= 400 {
 		err = fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(respBody))
 		result.Error = err.Error()
 		return result, err
+	}
 
-	
 	return result, nil
 }

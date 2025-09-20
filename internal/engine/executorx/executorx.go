@@ -7,10 +7,9 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v4"
-	"github.com/fengmingli/
 	"github.com/fengmingli/orchestrator/internal/engine/task"
 	"github.com/pkg/errors"
-	"github.com/cenkalti/backoff/v4"
+	"github.com/sirupsen/logrus"
 )
 
 // Executor 定义了执行任务的接口。
@@ -159,48 +158,48 @@ func (re *RetryableExecutor) Execute(req WarpExecRequest) WarpExecResult {
 		re.hook.OnSuccess(ctx, taskInst, finalWarpExecResult)
 	}
 	stepEndTime := time.Now()
+	if re.logger != nil {
 		re.logger.Infof("任务单:%s 步骤:%s 执行完成，开始时间：%s 结束时间：%s 耗时: %v",
 			req.OrderID, taskInst.GetName(), stepStartTime.Format("15:04:05.000"),
-			req.OrderID, taskInst.GetName(), stepStartTime.Format("15:04:05.000"), 
 			stepEndTime.Format("15:04:05.000"), stepEndTime.Sub(stepStartTime))
 	}
 	return finalWarpExecResult
 }
 func (re *RetryableExecutor) doWithRetry(ctx context.Context, taskInst task.Task) WarpExecResult {
 	var warpExecResult WarpExecResult
+	retryCount := 0
 
-	
 	// 配置指数退避
 	b := backoff.NewExponentialBackOff()
 	b.InitialInterval = re.retryDelay
 	b.MaxInterval = re.maxDelay
 	b.Multiplier = re.backoffFactor
+	b.MaxElapsedTime = 0 // 不限制总时间，通过重试次数控制
 
-	
 	// 限制重试次数
+	backoffWithMaxRetries := backoff.WithMaxRetries(b, uint64(re.maxRetries))
 
-	
 	operation := func() error {
 		start := time.Now()
 		execResult, callErr := taskInst.Execute(ctx)
+		duration := time.Since(start)
 
-		
 		if callErr != nil {
 			retryCount++
 			if re.logger != nil {
 				re.logger.Errorf("重试中(%d/%d) 任务ID:%s 执行:%s 执行失败:%v", retryCount, re.maxRetries, taskInst.GetID(), taskInst.GetName(), callErr.Error())
 			}
 			return callErr
+		}
 
-		
 		// 成功时填充结果
 		warpExecResult.ExecResult = execResult
 		warpExecResult.ExecResult.Duration = duration
 		warpExecResult.ExecResult.StartTime = start
 		warpExecResult.ExecResult.FinishTime = time.Now()
 		return nil
+	}
 
-	
 	retryErr := backoff.Retry(operation, backoffWithMaxRetries)
 	if retryErr != nil {
 		warpExecResult.Err = errors.Wrapf(retryErr, "任务ID:%s 执行:%s 失败", taskInst.GetID(), taskInst.GetName())

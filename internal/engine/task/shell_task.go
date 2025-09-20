@@ -52,6 +52,11 @@ func (s *ShellTask) AddEnvironment(key, value string) *ShellTask {
 	return s
 }
 
+// SetEnv 设置环境变量
+func (s *ShellTask) SetEnv(env map[string]string) {
+	s.Environment = env
+}
+
 // Validate 验证Shell任务参数
 func (s *ShellTask) Validate() error {
 	if err := s.BaseTask.Validate(); err != nil {
