@@ -29,6 +29,7 @@ go.work.sum
 bin/
 dist/
 build/
+!scripts/build/
 
 # 依赖包
 node_modules/
