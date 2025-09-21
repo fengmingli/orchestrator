@@ -13,11 +13,11 @@
 git clone <repository-url>
 cd orchestrator
 
-# 一键启动 (推荐使用新路径)
-./scripts/dev/start.sh
+# 一键启动
+./scripts/start.sh
 
-# 兼容性方式 (会自动重定向)
-./start.sh
+# 或直接使用开发环境脚本
+./scripts/dev/start.sh
 
 # 访问应用
 # 前端: http://localhost:3000
@@ -369,18 +369,18 @@ ufw enable
 ### 启动和停止
 
 ```bash
-# 启动服务 (推荐使用新路径)
-./scripts/dev/start.sh
+# 启动服务
+./scripts/start.sh
 
-# 停止服务 (推荐使用新路径)  
-./scripts/dev/stop.sh
+# 停止服务
+./scripts/stop.sh
 
 # 重启服务
-./scripts/dev/stop.sh && ./scripts/dev/start.sh
+./scripts/stop.sh && ./scripts/start.sh
 
-# 兼容性方式 (会自动重定向)
-./start.sh   # 启动
-./stop.sh    # 停止
+# 使用开发环境脚本
+./scripts/dev/start.sh   # 启动
+./scripts/dev/stop.sh    # 停止
 
 # 查看服务状态
 ps aux | grep orchestrator
