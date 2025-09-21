@@ -17,8 +17,8 @@ type WorkflowTemplate struct {
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
 
-	// 关联关系
-	Steps []WorkflowTemplateStep `json:"steps" gorm:"foreignKey:TemplateID;references:ID"`
+	// 保留关联字段但移除外键约束
+	Steps []WorkflowTemplateStep `json:"steps" gorm:"-"`
 }
 
 // WorkflowTemplateStep 模板步骤关联
@@ -32,8 +32,8 @@ type WorkflowTemplateStep struct {
 	Order        int       `json:"order" gorm:"comment:步骤顺序"`
 	CreatedAt    time.Time `json:"created_at"`
 
-	// 关联关系
-	Step *Step `json:"step" gorm:"foreignKey:StepID;references:ID"`
+	// 保留关联字段但移除外键约束
+	Step *Step `json:"step" gorm:"-"`
 }
 
 // BeforeCreate GORM钩子，创建前生成UUID
@@ -109,3 +109,4 @@ type DAGEdge struct {
 	Target string `json:"target"`
 	Type   string `json:"type,omitempty"`
 }
+

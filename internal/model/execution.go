@@ -20,9 +20,9 @@ type WorkflowExecution struct {
 	CreatedAt  time.Time  `json:"created_at"`
 	UpdatedAt  time.Time  `json:"updated_at"`
 
-	// 关联关系
-	Template *WorkflowTemplate       `json:"template" gorm:"foreignKey:TemplateID;references:ID"`
-	Steps    []WorkflowStepExecution `json:"steps" gorm:"foreignKey:ExecutionID;references:ID"`
+	// 保留关联字段但移除外键约束
+	Template *WorkflowTemplate       `json:"template" gorm:"-"`
+	Steps    []WorkflowStepExecution `json:"steps" gorm:"-"`
 }
 
 // WorkflowStepExecution 工作流步骤执行记录
@@ -40,8 +40,8 @@ type WorkflowStepExecution struct {
 	CreatedAt   time.Time  `json:"created_at"`
 	UpdatedAt   time.Time  `json:"updated_at"`
 
-	// 关联关系
-	Step *Step `json:"step" gorm:"foreignKey:StepID;references:ID"`
+	// 保留关联字段但移除外键约束
+	Step *Step `json:"step" gorm:"-"`
 }
 
 // BeforeCreate GORM钩子，创建前生成UUID

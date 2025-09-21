@@ -105,8 +105,15 @@ func (s *TemplateService) ListTemplates(page, size int, creatorEmail, isActive s
 
 	// 分页查询
 	offset := (page - 1) * size
-	if err := query.Preload("Steps.Step").Offset(offset).Limit(size).Order("created_at desc").Find(&templates).Error; err != nil {
+	if err := query.Offset(offset).Limit(size).Order("created_at desc").Find(&templates).Error; err != nil {
 		return nil, 0, fmt.Errorf("获取模板列表失败: %w", err)
+	}
+
+	// 手动加载关联数据
+	for _, template := range templates {
+		if err := s.loadTemplateSteps(template); err != nil {
+			return nil, 0, fmt.Errorf("加载模板步骤失败: %w", err)
+		}
 	}
 
 	return templates, total, nil
@@ -115,11 +122,16 @@ func (s *TemplateService) ListTemplates(page, size int, creatorEmail, isActive s
 // GetTemplate 获取模板详情
 func (s *TemplateService) GetTemplate(id string) (*model.WorkflowTemplate, error) {
 	var template model.WorkflowTemplate
-	if err := s.db.Preload("Steps.Step").Where("id = ?", id).First(&template).Error; err != nil {
+	if err := s.db.Where("id = ?", id).First(&template).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, fmt.Errorf("模板不存在")
 		}
 		return nil, fmt.Errorf("获取模板失败: %w", err)
+	}
+
+	// 手动加载关联数据
+	if err := s.loadTemplateSteps(&template); err != nil {
+		return nil, fmt.Errorf("加载模板步骤失败: %w", err)
 	}
 
 	return &template, nil
@@ -384,5 +396,46 @@ func (s *TemplateService) validateDAG(db *gorm.DB, templateID string) error {
 		return fmt.Errorf("DAG中存在环路")
 	}
 
+	return nil
+}
+
+// loadTemplateSteps 手动加载模板的步骤信息
+func (s *TemplateService) loadTemplateSteps(template *model.WorkflowTemplate) error {
+	// 查询模板步骤
+	var templateSteps []model.WorkflowTemplateStep
+	if err := s.db.Where("template_id = ?", template.ID).Order("\"order\" asc").Find(&templateSteps).Error; err != nil {
+		return fmt.Errorf("查询模板步骤失败: %w", err)
+	}
+
+	// 收集所有步骤ID
+	stepIDs := make([]string, 0, len(templateSteps))
+	for _, ts := range templateSteps {
+		stepIDs = append(stepIDs, ts.StepID)
+	}
+
+	// 批量查询步骤信息
+	var steps []model.Step
+	if len(stepIDs) > 0 {
+		if err := s.db.Where("id IN ?", stepIDs).Find(&steps).Error; err != nil {
+			return fmt.Errorf("查询步骤信息失败: %w", err)
+		}
+	}
+
+	// 创建步骤映射
+	stepMap := make(map[string]*model.Step)
+	for i := range steps {
+		stepMap[steps[i].ID] = &steps[i]
+	}
+
+	// 重新构建关联关系 - 填充Step字段
+	for i := range templateSteps {
+		if step, exists := stepMap[templateSteps[i].StepID]; exists {
+			templateSteps[i].Step = step
+		}
+	}
+
+	// 设置模板的Steps字段
+	template.Steps = templateSteps
+	
 	return nil
 }

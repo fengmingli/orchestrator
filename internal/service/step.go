@@ -162,18 +162,57 @@ func (s *StepService) UpdateStep(id string, req *model.StepUpdateRequest) (*mode
 
 // DeleteStep 删除步骤
 func (s *StepService) DeleteStep(id string) error {
+	// 开始事务
+	tx := s.db.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// 检查步骤是否存在
+	var step model.Step
+	if err := tx.Where("id = ?", id).First(&step).Error; err != nil {
+		tx.Rollback()
+		if err == gorm.ErrRecordNotFound {
+			return fmt.Errorf("步骤不存在")
+		}
+		return fmt.Errorf("获取步骤失败: %w", err)
+	}
+
 	// 检查步骤是否被模板使用
-	var count int64
-	if err := s.db.Model(&model.WorkflowTemplateStep{}).Where("step_id = ?", id).Count(&count).Error; err != nil {
+	var templateStepCount int64
+	if err := tx.Model(&model.WorkflowTemplateStep{}).Where("step_id = ?", id).Count(&templateStepCount).Error; err != nil {
+		tx.Rollback()
 		return fmt.Errorf("检查步骤使用情况失败: %w", err)
 	}
 
-	if count > 0 {
-		return fmt.Errorf("步骤正在被 %d 个模板使用，无法删除", count)
+	if templateStepCount > 0 {
+		tx.Rollback()
+		return fmt.Errorf("步骤正在被 %d 个模板使用，无法删除", templateStepCount)
 	}
 
-	if err := s.db.Where("id = ?", id).Delete(&model.Step{}).Error; err != nil {
+	// 检查步骤是否被执行记录使用
+	var stepExecutionCount int64
+	if err := tx.Model(&model.WorkflowStepExecution{}).Where("step_id = ?", id).Count(&stepExecutionCount).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("检查步骤执行记录失败: %w", err)
+	}
+
+	if stepExecutionCount > 0 {
+		tx.Rollback()
+		return fmt.Errorf("步骤存在 %d 个执行记录，无法删除", stepExecutionCount)
+	}
+
+	// 删除步骤
+	if err := tx.Where("id = ?", id).Delete(&model.Step{}).Error; err != nil {
+		tx.Rollback()
 		return fmt.Errorf("删除步骤失败: %w", err)
+	}
+
+	// 提交事务
+	if err := tx.Commit().Error; err != nil {
+		return fmt.Errorf("提交事务失败: %w", err)
 	}
 
 	return nil

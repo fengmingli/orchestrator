@@ -153,8 +153,13 @@ func (s *OrchestratorService) ExecuteWorkflow(executionID string) error {
 func (s *OrchestratorService) buildTaskDefinitions(execution *model.WorkflowExecution) ([]engine.TaskDefinition, error) {
 	// 获取模板步骤
 	var templateSteps []model.WorkflowTemplateStep
-	if err := s.db.Preload("Step").Where("template_id = ?", execution.TemplateID).Order("\"order\" asc").Find(&templateSteps).Error; err != nil {
+	if err := s.db.Where("template_id = ?", execution.TemplateID).Order("\"order\" asc").Find(&templateSteps).Error; err != nil {
 		return nil, fmt.Errorf("获取模板步骤失败: %w", err)
+	}
+
+	// 手动加载步骤信息
+	if err := s.loadTemplateStepsDetails(templateSteps); err != nil {
+		return nil, fmt.Errorf("加载步骤详情失败: %w", err)
 	}
 
 	definitions := make([]engine.TaskDefinition, 0, len(templateSteps))
@@ -358,4 +363,38 @@ func (ct *callbackTask) Execute(ctx context.Context) (task.ExecResult, error) {
 	}
 
 	return result, err
+}
+
+// loadTemplateStepsDetails 手动加载模板步骤详情
+func (s *OrchestratorService) loadTemplateStepsDetails(templateSteps []model.WorkflowTemplateStep) error {
+	if len(templateSteps) == 0 {
+		return nil
+	}
+
+	// 收集所有步骤ID
+	stepIDs := make([]string, 0, len(templateSteps))
+	for _, ts := range templateSteps {
+		stepIDs = append(stepIDs, ts.StepID)
+	}
+
+	// 批量查询步骤信息
+	var steps []model.Step
+	if err := s.db.Where("id IN ?", stepIDs).Find(&steps).Error; err != nil {
+		return fmt.Errorf("查询步骤信息失败: %w", err)
+	}
+
+	// 创建步骤映射
+	stepMap := make(map[string]*model.Step)
+	for i := range steps {
+		stepMap[steps[i].ID] = &steps[i]
+	}
+
+	// 填充Step字段
+	for i := range templateSteps {
+		if step, exists := stepMap[templateSteps[i].StepID]; exists {
+			templateSteps[i].Step = step
+		}
+	}
+
+	return nil
 }

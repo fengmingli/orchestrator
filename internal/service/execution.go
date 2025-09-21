@@ -20,9 +20,18 @@ func NewExecutionService(db *gorm.DB) *ExecutionService {
 
 // CreateExecution 创建执行
 func (s *ExecutionService) CreateExecution(req *model.ExecutionCreateRequest) (*model.WorkflowExecution, error) {
+	// 开始事务
+	tx := s.db.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
 	// 检查模板是否存在
 	var template model.WorkflowTemplate
-	if err := s.db.Where("id = ? AND is_active = ?", req.TemplateID, true).First(&template).Error; err != nil {
+	if err := tx.Where("id = ? AND is_active = ?", req.TemplateID, true).First(&template).Error; err != nil {
+		tx.Rollback()
 		if err == gorm.ErrRecordNotFound {
 			return nil, fmt.Errorf("模板不存在或已禁用")
 		}
@@ -35,13 +44,20 @@ func (s *ExecutionService) CreateExecution(req *model.ExecutionCreateRequest) (*
 		CreatedBy:  req.CreatedBy,
 	}
 
-	if err := s.db.Create(execution).Error; err != nil {
+	if err := tx.Create(execution).Error; err != nil {
+		tx.Rollback()
 		return nil, fmt.Errorf("创建执行失败: %w", err)
 	}
 
 	// 初始化步骤执行记录
-	if err := s.initStepExecutions(execution.ID, req.TemplateID); err != nil {
+	if err := s.initStepExecutionsWithTx(tx, execution.ID, req.TemplateID); err != nil {
+		tx.Rollback()
 		return nil, fmt.Errorf("初始化步骤执行记录失败: %w", err)
+	}
+
+	// 提交事务
+	if err := tx.Commit().Error; err != nil {
+		return nil, fmt.Errorf("提交事务失败: %w", err)
 	}
 
 	return s.GetExecution(execution.ID)
@@ -94,11 +110,16 @@ func (s *ExecutionService) ListExecutions(page, size int, templateID, status str
 // GetExecution 获取执行详情
 func (s *ExecutionService) GetExecution(id string) (*model.WorkflowExecution, error) {
 	var execution model.WorkflowExecution
-	if err := s.db.Preload("Template").Preload("Steps.Step").Where("id = ?", id).First(&execution).Error; err != nil {
+	if err := s.db.Where("id = ?", id).First(&execution).Error; err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, fmt.Errorf("执行不存在")
 		}
 		return nil, fmt.Errorf("获取执行失败: %w", err)
+	}
+
+	// 手动加载关联数据
+	if err := s.loadExecutionDetails(&execution); err != nil {
+		return nil, fmt.Errorf("加载执行详情失败: %w", err)
 	}
 
 	return &execution, nil
@@ -180,8 +201,13 @@ func (s *ExecutionService) CancelExecution(id string) error {
 // GetExecutionLogs 获取执行日志
 func (s *ExecutionService) GetExecutionLogs(id string) ([]*model.WorkflowStepExecution, error) {
 	var stepExecutions []*model.WorkflowStepExecution
-	if err := s.db.Preload("Step").Where("execution_id = ?", id).Order("created_at asc").Find(&stepExecutions).Error; err != nil {
+	if err := s.db.Where("execution_id = ?", id).Order("created_at asc").Find(&stepExecutions).Error; err != nil {
 		return nil, fmt.Errorf("获取执行日志失败: %w", err)
+	}
+
+	// 手动加载步骤信息
+	if err := s.loadStepExecutionDetails(stepExecutions); err != nil {
+		return nil, fmt.Errorf("加载步骤详情失败: %w", err)
 	}
 
 	return stepExecutions, nil
@@ -244,6 +270,50 @@ func (s *ExecutionService) initStepExecutions(executionID, templateID string) er
 	return nil
 }
 
+// initStepExecutionsWithTx 使用事务初始化步骤执行记录
+func (s *ExecutionService) initStepExecutionsWithTx(tx *gorm.DB, executionID, templateID string) error {
+	// 获取模板步骤
+	var templateSteps []model.WorkflowTemplateStep
+	if err := tx.Where("template_id = ?", templateID).Find(&templateSteps).Error; err != nil {
+		return fmt.Errorf("获取模板步骤失败: %w", err)
+	}
+
+	// 验证模板步骤是否存在
+	if len(templateSteps) == 0 {
+		return fmt.Errorf("模板没有定义步骤")
+	}
+
+	// 收集所有步骤ID，验证步骤是否存在
+	stepIDs := make([]string, 0, len(templateSteps))
+	for _, ts := range templateSteps {
+		stepIDs = append(stepIDs, ts.StepID)
+	}
+
+	var existingStepsCount int64
+	if err := tx.Model(&model.Step{}).Where("id IN ?", stepIDs).Count(&existingStepsCount).Error; err != nil {
+		return fmt.Errorf("验证步骤存在性失败: %w", err)
+	}
+
+	if int(existingStepsCount) != len(stepIDs) {
+		return fmt.Errorf("部分步骤不存在，无法创建执行")
+	}
+
+	// 创建步骤执行记录
+	for _, templateStep := range templateSteps {
+		stepExecution := &model.WorkflowStepExecution{
+			ExecutionID: executionID,
+			StepID:      templateStep.StepID,
+			Status:      "pending",
+		}
+
+		if err := tx.Create(stepExecution).Error; err != nil {
+			return fmt.Errorf("创建步骤执行记录失败: %w", err)
+		}
+	}
+
+	return nil
+}
+
 // calculateProgress 计算执行进度
 func (s *ExecutionService) calculateProgress(stats map[string]int, total int) float64 {
 	if total == 0 {
@@ -252,4 +322,112 @@ func (s *ExecutionService) calculateProgress(stats map[string]int, total int) fl
 
 	completed := stats["success"] + stats["failed"] + stats["skipped"]
 	return float64(completed) / float64(total) * 100
+}
+
+// loadExecutionDetails 手动加载执行详情
+func (s *ExecutionService) loadExecutionDetails(execution *model.WorkflowExecution) error {
+	// 加载模板信息
+	var template model.WorkflowTemplate
+	if err := s.db.Where("id = ?", execution.TemplateID).First(&template).Error; err != nil {
+		return fmt.Errorf("加载模板信息失败: %w", err)
+	}
+	execution.Template = &template
+
+	// 加载步骤执行记录
+	var stepExecutions []model.WorkflowStepExecution
+	if err := s.db.Where("execution_id = ?", execution.ID).Order("created_at asc").Find(&stepExecutions).Error; err != nil {
+		return fmt.Errorf("加载步骤执行记录失败: %w", err)
+	}
+
+	// 加载步骤执行记录的详情
+	stepExecutionPtrs := make([]*model.WorkflowStepExecution, len(stepExecutions))
+	for i := range stepExecutions {
+		stepExecutionPtrs[i] = &stepExecutions[i]
+	}
+	if err := s.loadStepExecutionDetails(stepExecutionPtrs); err != nil {
+		return fmt.Errorf("加载步骤执行详情失败: %w", err)
+	}
+
+	execution.Steps = stepExecutions
+	return nil
+}
+
+// loadStepExecutionDetails 手动加载步骤执行详情
+func (s *ExecutionService) loadStepExecutionDetails(stepExecutions []*model.WorkflowStepExecution) error {
+	if len(stepExecutions) == 0 {
+		return nil
+	}
+
+	// 收集所有步骤ID
+	stepIDs := make([]string, 0, len(stepExecutions))
+	for _, se := range stepExecutions {
+		stepIDs = append(stepIDs, se.StepID)
+	}
+
+	// 批量查询步骤信息
+	var steps []model.Step
+	if err := s.db.Where("id IN ?", stepIDs).Find(&steps).Error; err != nil {
+		return fmt.Errorf("查询步骤信息失败: %w", err)
+	}
+
+	// 创建步骤映射
+	stepMap := make(map[string]*model.Step)
+	for i := range steps {
+		stepMap[steps[i].ID] = &steps[i]
+	}
+
+	// 填充Step字段
+	for _, se := range stepExecutions {
+		if step, exists := stepMap[se.StepID]; exists {
+			se.Step = step
+		}
+	}
+
+	return nil
+}
+
+// DeleteExecution 删除执行记录（包括所有相关的步骤执行记录）
+func (s *ExecutionService) DeleteExecution(id string) error {
+	// 开始事务
+	tx := s.db.Begin()
+	defer func() {
+		if r := recover(); r != nil {
+			tx.Rollback()
+		}
+	}()
+
+	// 检查执行是否存在
+	var execution model.WorkflowExecution
+	if err := tx.Where("id = ?", id).First(&execution).Error; err != nil {
+		tx.Rollback()
+		if err == gorm.ErrRecordNotFound {
+			return fmt.Errorf("执行记录不存在")
+		}
+		return fmt.Errorf("获取执行记录失败: %w", err)
+	}
+
+	// 检查执行状态，如果正在运行则不允许删除
+	if execution.Status == "running" {
+		tx.Rollback()
+		return fmt.Errorf("无法删除正在运行的执行记录")
+	}
+
+	// 删除所有步骤执行记录
+	if err := tx.Where("execution_id = ?", id).Delete(&model.WorkflowStepExecution{}).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("删除步骤执行记录失败: %w", err)
+	}
+
+	// 删除执行记录
+	if err := tx.Where("id = ?", id).Delete(&model.WorkflowExecution{}).Error; err != nil {
+		tx.Rollback()
+		return fmt.Errorf("删除执行记录失败: %w", err)
+	}
+
+	// 提交事务
+	if err := tx.Commit().Error; err != nil {
+		return fmt.Errorf("提交事务失败: %w", err)
+	}
+
+	return nil
 }
