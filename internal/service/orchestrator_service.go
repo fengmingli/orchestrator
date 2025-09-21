@@ -3,12 +3,14 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/fengmingli/orchestrator/internal/engine"
 	"github.com/fengmingli/orchestrator/internal/engine/task"
 	"github.com/fengmingli/orchestrator/internal/engine/workflow"
+	"github.com/fengmingli/orchestrator/internal/lock"
 	"github.com/fengmingli/orchestrator/internal/model"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
@@ -19,11 +21,17 @@ type OrchestratorService struct {
 	db               *gorm.DB
 	executionService *ExecutionService
 	orchestrator     *engine.TaskOrchestrator
+	lockManager      *lock.LockManager
 	logger           *logrus.Entry
 }
 
 // NewOrchestratorService 创建编排服务
 func NewOrchestratorService(db *gorm.DB) *OrchestratorService {
+	return NewOrchestratorServiceWithLockConfig(db, nil)
+}
+
+// NewOrchestratorServiceWithLockConfig 使用指定锁配置创建编排服务
+func NewOrchestratorServiceWithLockConfig(db *gorm.DB, lockConfig *lock.LockConfig) *OrchestratorService {
 	logger := logrus.NewEntry(logrus.New())
 	
 	// 创建任务编排器
@@ -32,17 +40,27 @@ func NewOrchestratorService(db *gorm.DB) *OrchestratorService {
 		WithMaxWorkers(10).
 		WithRetryConfig(3, time.Second)
 
+	// 创建分布式锁管理器
+	lockManager, err := lock.NewLockManager(db, lockConfig)
+	if err != nil {
+		logger.WithError(err).Fatal("创建锁管理器失败")
+	}
+
 	return &OrchestratorService{
 		db:               db,
 		executionService: NewExecutionService(db),
 		orchestrator:     orchestrator,
+		lockManager:      lockManager,
 		logger:           logger,
 	}
 }
 
 // ExecuteWorkflow 执行工作流
 func (s *OrchestratorService) ExecuteWorkflow(executionID string) error {
-	s.logger.WithField("execution_id", executionID).Info("开始执行工作流")
+	ctx := context.Background()
+	logger := s.logger.WithField("execution_id", executionID)
+	
+	logger.Info("开始执行工作流")
 
 	// 获取执行记录
 	execution, err := s.executionService.GetExecution(executionID)
@@ -54,6 +72,25 @@ func (s *OrchestratorService) ExecuteWorkflow(executionID string) error {
 	if execution.Status != "pending" {
 		return fmt.Errorf("执行状态不是pending，无法启动")
 	}
+
+	// 获取分布式锁，确保只有一个副本执行
+	workflowProvider := s.lockManager.GetWorkflowLockProvider()
+	workflowLock, err := workflowProvider.LockWorkflowExecution(ctx, executionID)
+	if err != nil {
+		if errors.Is(err, lock.ErrWorkflowAlreadyRunning) {
+			logger.Info("工作流已被其他副本执行，跳过执行")
+			return nil // 不是错误，只是跳过执行
+		}
+		logger.WithError(err).Error("获取工作流执行锁失败")
+		return fmt.Errorf("获取工作流执行锁失败: %w", err)
+	}
+
+	// 确保在函数结束时释放锁
+	defer func() {
+		if unlockErr := workflowLock.Unlock(ctx); unlockErr != nil {
+			logger.WithError(unlockErr).Error("释放工作流锁失败")
+		}
+	}()
 
 	// 更新执行状态为运行中
 	startTime := time.Now()
@@ -71,8 +108,12 @@ func (s *OrchestratorService) ExecuteWorkflow(executionID string) error {
 		return fmt.Errorf("构建任务定义失败: %w", err)
 	}
 
+	// 执行工作流前刷新锁的过期时间
+	if err := workflowLock.Refresh(ctx, 10*time.Minute); err != nil {
+		logger.WithError(err).Warn("刷新工作流锁失败")
+	}
+
 	// 执行工作流
-	ctx := context.Background()
 	result, err := s.orchestrator.Execute(ctx, taskDefinitions)
 
 	// 更新执行结果

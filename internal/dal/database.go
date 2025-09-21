@@ -75,10 +75,5 @@ func autoMigrate(db *gorm.DB) error {
 		&model.WorkflowTemplateStep{},
 		&model.WorkflowExecution{},
 		&model.WorkflowStepExecution{},
-		// 兼容旧的模型
-		&model.Template{},
-		&model.TemplateStep{},
-		&model.Execution{},
-		&model.StepExecution{},
 	)
 }
